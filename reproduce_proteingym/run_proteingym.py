@@ -11,7 +11,9 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def read_seq(fasta):
-    for record in SeqIO.parse(fasta, "fasta"):
+    #base_path = Path(__file__).parent
+    fasta_path = Path(fasta)
+    for record in SeqIO.parse(fasta_path, "fasta"):
         return str(record.seq)
 
 
@@ -75,10 +77,19 @@ def score_protein(
     df.to_csv(mutant_file, index=False)
     corr = spearmanr(df["DMS_score"], df[model_name]).correlation
     print(f"{name}: {corr}")
+    return name, corr
 
 
 def read_names(fasta_dir):
     files = Path(fasta_dir).glob("*.fasta")
+    names = [file.stem for file in files]
+    return names
+
+# new version more robust
+def read_names_2(fasta_dir):
+    base_path = Path(__file__).parent  # This gets the directory where the script is
+    fasta_path = base_path / fasta_dir
+    files = fasta_path.glob("*.fasta")
     names = [file.stem for file in files]
     return names
 
@@ -90,21 +101,21 @@ def main():
         "--residue_dir",
         type=str,
         required=False,
-        default="proteingym_benchmark/residue_sequence",
+        default="reproduce_proteingym/proteingym_benchmark/residue_sequence",
         help="Directory containing FASTA files of residue sequences",
     )
     parser.add_argument(
         "--structure_dir",
         type=str,
         required=False,
-        default="proteingym_benchmark/structure_sequence/2048",
+        default="reproduce_proteingym/proteingym_benchmark/structure_sequence/2048",
         help="Directory containing FASTA files of structure sequences",
     )
     parser.add_argument(
         "--mutant_dir",
         type=str,
         required=False,
-        default="proteingym_benchmark/substitutions",
+        default="reproduce_proteingym/proteingym_benchmark/substitutions",
         help="Directory containing CSV files with mutants",
     )
     args = parser.parse_args()
@@ -120,8 +131,9 @@ def main():
     model_name = args.model_path.split("/")[-1]
     protein_names = read_names(args.residue_dir)
     print(protein_names)
+    results = []
     for protein_name in protein_names:
-        score_protein(
+        result = score_protein(
             model,
             tokenizer=tokenizer,
             residue_sequence_dir=args.residue_dir,
@@ -130,10 +142,37 @@ def main():
             model_name=model_name,
             name=protein_name,
         )
+        results.append(result)
+
+    print("Mean correlation:", sum(c for _, c in results) / len(results))
+
+def score_all_proteins(model_path, residue_dir, structure_dir, mutant_dir, limit=None):
+    model = AutoModelForMaskedLM.from_pretrained(model_path, trust_remote_code=True).to(device)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    model_name = model_path.split("/")[-1]
+
+    protein_names = read_names_2(residue_dir)
+    if limit:
+        protein_names = protein_names[:limit]
+
+    results = []
+    for name in protein_names:
+        result = score_protein(
+            model=model,
+            tokenizer=tokenizer,
+            residue_sequence_dir=residue_dir,
+            structure_sequence_dir=structure_dir,
+            mutant_dir=mutant_dir,
+            name=name,
+            model_name=model_name,
+        )
+        if result:
+            results.append(result)
+    return results
 
 
 if __name__ == "__main__":
     main()
 
 # To run with parser:
-# python reproduce_proteingym/run_proteingym.py --model_path AI4Protein/ProSST-2048 --residue_dir proteingym_benchmark/residue_sequence --structure_dir proteingym_benchmark/structure_sequence/2048
+# python reproduce_proteingym/run_proteingym.py --model_path AI4Protein/ProSST-2048 --structure_dir reproduce_proteingym/proteingym_benchmark/structure_sequence/2048
