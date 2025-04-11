@@ -201,3 +201,7 @@ example_data/substitutions
 /proteingym_benchmark
 /PPI_data
 /proteingym_AF2_structures
+
+# Reproduce of proteingym
+
+/reproduce_proteingym/proteingym_benchmark
