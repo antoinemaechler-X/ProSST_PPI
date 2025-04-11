@@ -50,7 +50,7 @@ print(f"Processing vocab size: {vocab_size} on GPU {os.environ.get('CUDA_VISIBLE
 processor = PdbQuantizer(structure_vocab_size=vocab_size)
 
 # 处理每个PDB文件
-for pdb_path in pdb_files[:250]:
+for pdb_path in pdb_files[:300]:
     filename = os.path.basename(pdb_path)
     protein_name = os.path.splitext(filename)[0]
 
