@@ -82,6 +82,14 @@ def read_names(fasta_dir):
     names = [file.stem for file in files]
     return names
 
+#new version more robust
+def read_names_2(fasta_dir):
+    base_path = Path(__file__).parent  # This gets the directory where the script is
+    fasta_path = base_path / fasta_dir
+    files = fasta_path.glob("*.fasta")
+    names = [file.stem for file in files]
+    return names
+
 
 def main():
     parser = ArgumentParser()
@@ -118,7 +126,7 @@ def main():
 
     print("Scoring proteins...")
     model_name = args.model_path.split("/")[-1]
-    protein_names = read_names(args.residue_dir)
+    protein_names = read_names_2(args.residue_dir)
     print(protein_names)
     for protein_name in protein_names:
         score_protein(
