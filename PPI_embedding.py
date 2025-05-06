@@ -6,9 +6,13 @@ from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-PDB_DIR = "/workspace/ProSST/PPI_data/PP"
-FASTA_DIR = "/workspace/ProSST/PPI_data/20"
-OUTPUT_DIR = "./PPI_embeddings"
+# PDB_DIR = "/workspace/ProSST/PPI_data/PP"
+# FASTA_DIR = "/workspace/ProSST/PPI_data/20"
+# OUTPUT_DIR = "./PPI_embeddings"
+PDB_DIR = "zero_shot/example_data"
+FASTA_DIR = "zero_shot/example_data"
+OUTPUT_DIR = "embeddings_test"
+
 Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)  # 创建存储embedding的文件夹
 
 def parse_pdb_chain_sequence(pdb_file: str) -> dict:
@@ -35,6 +39,19 @@ def load_ss_input(fasta_file: str):
     except Exception as e:
         print(f"Error reading {fasta_file}: {e}")
         return None
+    
+def load_ss_input_v2(fasta_file: str):
+    """Load amino acid sequence from a standard FASTA file."""
+    try:
+        with open(fasta_file, "r") as f:
+            lines = f.readlines()
+            sequence_lines = [line.strip() for line in lines if not line.startswith(">")]
+            aa_sequence = "".join(sequence_lines)
+            return aa_sequence
+    except Exception as e:
+        print(f"Error reading {fasta_file}: {e}")
+        return None
+
 
 def tokenize_structure_sequence(structure_sequence: list):
     """编码二级结构序列"""
@@ -82,6 +99,7 @@ if __name__ == "__main__":
     model = AutoModelForMaskedLM.from_pretrained(model_path, trust_remote_code=True).to(device)
     
     pdb_files = list(Path(PDB_DIR).glob("*.pdb"))
+    print(pdb_files)
     for pdb_file in pdb_files:
         pdb_id = pdb_file.stem  # 获取文件名（不含后缀）
         fasta_file = Path(FASTA_DIR) / f"{pdb_id}.fasta"
@@ -91,7 +109,7 @@ if __name__ == "__main__":
             continue
         
         sequences = parse_pdb_chain_sequence(str(pdb_file))
-        ss_input = load_ss_input(str(fasta_file))
+        ss_input = load_ss_input_v2(str(fasta_file))
         
         if ss_input is None:
             print(f"Skipping {pdb_id} due to invalid SS input")
