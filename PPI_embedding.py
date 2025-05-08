@@ -13,10 +13,10 @@ PDB_DIR = "zero_shot/example_data"
 FASTA_DIR = "zero_shot/example_data"
 OUTPUT_DIR = "embeddings_test"
 
-Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)  # 创建存储embedding的文件夹
+Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)  # Create directory for storing embeddings
 
 def parse_pdb_chain_sequence(pdb_file: str) -> dict:
-    """解析PDB文件，返回各链的氨基酸序列"""
+    """Parse PDB file and return amino acid sequences for each chain."""
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure("protein", pdb_file)
     sequences = {}
@@ -28,12 +28,12 @@ def parse_pdb_chain_sequence(pdb_file: str) -> dict:
     return sequences
 
 def load_ss_input(fasta_file: str):
-    """从fasta文件加载ss_input序列"""
+    """Load secondary-structure input sequence from a custom-format FASTA file."""
     try:
         with open(fasta_file, "r") as f:
             lines = f.readlines()
             if len(lines) < 2:
-                return None  # 确保有足够的行数据
+                return None  # Ensure there are enough lines
             ss_sequence = list(map(int, lines[1].strip().split(',')))
             return ss_sequence
     except Exception as e:
@@ -54,13 +54,13 @@ def load_ss_input_v2(fasta_file: str):
 
 
 def tokenize_structure_sequence(structure_sequence: list):
-    """编码二级结构序列"""
+    """Encode secondary structure sequence."""
     shift_seq = [1] + [i + 3 for i in structure_sequence] + [2]
     return torch.tensor([shift_seq], dtype=torch.long).to(device)
 
 @torch.no_grad()
 def get_embeddings(model, tokenizer, sequences: dict, ss_input: list, layer: int = -1, max_length: int = 2048):
-    """获取蛋白质链的embedding"""
+    """Get embeddings for each protein chain."""
     embeddings = {}
     for chain_id, aa_sequence in sequences.items():
         if len(aa_sequence) > max_length:
@@ -74,6 +74,7 @@ def get_embeddings(model, tokenizer, sequences: dict, ss_input: list, layer: int
             truncation=True
         ).to(device)
         
+        # If provided ss_input matches sequence length, use it; otherwise default to all-zeros
         if ss_input and len(ss_input) == len(tokenized.input_ids[0]) - 2:
             ss_tensor = tokenize_structure_sequence(ss_input)
         else:
@@ -89,6 +90,7 @@ def get_embeddings(model, tokenizer, sequences: dict, ss_input: list, layer: int
         if layer >= len(outputs.hidden_states):
             raise ValueError(f"Layer {layer} is out of range. Model has {len(outputs.hidden_states)} layers.")
         
+        # Take the mean over the token dimension for the specified layer
         emb = outputs.hidden_states[layer][0].mean(dim=0).cpu().numpy()
         embeddings[chain_id] = emb
     return embeddings
@@ -101,7 +103,7 @@ if __name__ == "__main__":
     pdb_files = list(Path(PDB_DIR).glob("*.pdb"))
     print(pdb_files)
     for pdb_file in pdb_files:
-        pdb_id = pdb_file.stem  # 获取文件名（不含后缀）
+        pdb_id = pdb_file.stem  # Get filename without extension
         fasta_file = Path(FASTA_DIR) / f"{pdb_id}.fasta"
         
         if not fasta_file.exists():

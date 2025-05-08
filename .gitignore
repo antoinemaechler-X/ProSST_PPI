@@ -193,8 +193,7 @@ pyrightconfig.json
 .vscode/
 example_data/proteingym_benchmark.zip
 example_data/residue_sequence
-example_data/structure_sequence
-example_data/substitutions
+zero_shot/example_data/substitutions
 
 # Data uploaded
 
