@@ -1,7 +1,0 @@
-transformers
-scipy
-pandas
-Bio
-ipdb
-scikit_learn
-biotite==0.39.0

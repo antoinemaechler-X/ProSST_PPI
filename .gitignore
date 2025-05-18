@@ -191,8 +191,6 @@ pyrightconfig.json
 # End of https://www.toptal.com/developers/gitignore/api/python,linux
 .code/
 .vscode/
-example_data/proteingym_benchmark.zip
-example_data/residue_sequence
 zero_shot/example_data/substitutions
 
 # Data uploaded
@@ -205,3 +203,27 @@ zero_shot/example_data/substitutions
 # Reproduce of proteingym
 
 /reproduce_proteingym/proteingym_benchmark
+
+# big data
+
+important_data_v2.zip
+
+data/SKEMPI2/M1340_cache
+data/SKEMPI2/M1340_cache/entries_cache
+data/SKEMPI2/M1340_cache/optimized
+data/SKEMPI2/M1340_cache/optimized_evoef1
+data/SKEMPI2/M1340_cache/wildtype
+data/SKEMPI2/M1340_cache/wildtype_evoef1
+data/SKEMPI2/M1707_cache
+data/SKEMPI2/M1707_cache/entries_cache
+data/SKEMPI2/M1707_cache/optimized
+data/SKEMPI2/M1707_cache/wildtype
+data/SKEMPI2/PDBs
+data/SKEMPI2/SKEMPI2_cache
+data/SKEMPI2/SKEMPI2_cache/entries_cache
+data/SKEMPI2/SKEMPI2_cache/optimized
+data/SKEMPI2/SKEMPI2_cache/optimized_evoef1
+data/SKEMPI2/SKEMPI2_cache/wildtype
+data/SKEMPI2/SKEMPI2_cache/wildtype_evoef1
+data/SKEMPI_v2
+data/SKEMPI2

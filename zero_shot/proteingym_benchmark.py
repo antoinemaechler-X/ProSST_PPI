@@ -126,7 +126,7 @@ def main():
 
     print("Scoring proteins...")
     model_name = args.model_path.split("/")[-1]
-    protein_names = read_names_2(args.residue_dir)
+    protein_names = read_names(args.residue_dir)
     print(protein_names)
     for protein_name in protein_names:
         score_protein(

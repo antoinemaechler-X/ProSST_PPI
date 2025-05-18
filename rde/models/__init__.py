@@ -1,0 +1,1 @@
+from .protein_mpnn_network_2 import ProteinMPNN_NET
