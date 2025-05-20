@@ -227,3 +227,7 @@ data/SKEMPI2/SKEMPI2_cache/wildtype
 data/SKEMPI2/SKEMPI2_cache/wildtype_evoef1
 data/SKEMPI_v2
 data/SKEMPI2
+
+data/scores_cache
+data/preproc.npz
+MLP_runs

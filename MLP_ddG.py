@@ -16,6 +16,7 @@ from concurrent.futures import ProcessPoolExecutor
 import os
 from typing import Dict, List, Tuple, Any
 from datetime import datetime
+from explore_centrality_interface.interface_score import interface_scores
 
 def parse_args():
     """Parse command line arguments for model parameters."""
@@ -42,10 +43,11 @@ def parse_args():
     parser.add_argument('--wt_dir', type=str, default="data/SKEMPI2/SKEMPI2_cache/embedding_wildtype_full_2048", help='Wildtype embeddings directory')
     parser.add_argument('--mut_dir', type=str, default="data/SKEMPI2/SKEMPI2_cache/embedding_optimized_full_2048", help='Mutant embeddings directory')
     parser.add_argument('--preprocessed_dir', type=str, default="preprocessed_data", help='Directory for preprocessed data')
+    parser.add_argument('--pdb_dir', type=str, default="data/SKEMPI2/SKEMPI2_cache/wildtype", help='Directory containing PDB files')
     
     # Grid search parameters
     parser.add_argument('--grid_search', action='store_true', help='Run grid search')
-    parser.add_argument('--num_workers', type=int, default=4, help='Number of parallel workers for grid search')
+    parser.add_argument('--num_workers', type=int, default=8, help='Number of parallel workers for grid search')
     parser.add_argument('--preprocess_only', action='store_true', help='Only preprocess data, then exit')
     
     return parser.parse_args()
@@ -105,8 +107,39 @@ def load_embeddings(wt_path, mut_path):
     mut_emb = np.load(mut_path)
     return wt_emb, mut_emb
 
-def process_embeddings(wt_emb, mut_emb):
-    """Calculate difference and maxpool across residues."""
+def get_interface_scores(pdb_path: str, sequence: str, chain_id: str) -> np.ndarray:
+    """
+    Calculate interface scores for each residue in the sequence.
+    
+    Args:
+        pdb_path: Path to the PDB file
+        sequence: Amino acid sequence
+        chain_id: Chain identifier
+        
+    Returns:
+        Array of interface scores, one per residue
+    """
+    scores = []
+    for i, aa in enumerate(sequence, 1):
+        # Create a fake mutation for each residue (e.g., "RA1A" for residue A at position 1)
+        mutation = f"{aa}{chain_id}{i}A"
+        try:
+            score = interface_scores(pdb_path, mutation)
+            scores.append(score)
+        except Exception as e:
+            print(f"Warning: Could not calculate interface score for {mutation}: {str(e)}")
+            scores.append(0.0)  # Use 0.0 as fallback
+    return np.array(scores)
+
+def process_embeddings(wt_emb, mut_emb, interface_scores_array):
+    """
+    Calculate difference and maxpool across residues, weighted by interface scores.
+    
+    Args:
+        wt_emb: Wildtype embeddings
+        mut_emb: Mutant embeddings
+        interface_scores_array: Array of interface scores for each residue
+    """
     # Check for NaN in input
     if np.isnan(wt_emb).any():
         print("NaN found in wildtype embedding")
@@ -120,9 +153,21 @@ def process_embeddings(wt_emb, mut_emb):
     if np.isnan(diff).any():
         print("NaN found after difference calculation")
         return None
-        
+    
+    # Ensure interface scores match the number of residues
+    if len(interface_scores_array) != diff.shape[0]:
+        print(f"Warning: Interface scores length ({len(interface_scores_array)}) doesn't match number of residues ({diff.shape[0]})")
+        # Pad or truncate interface scores to match
+        if len(interface_scores_array) < diff.shape[0]:
+            interface_scores_array = np.pad(interface_scores_array, (0, diff.shape[0] - len(interface_scores_array)))
+        else:
+            interface_scores_array = interface_scores_array[:diff.shape[0]]
+    
+    # Multiply differences by interface scores (broadcasting across embedding dimensions)
+    weighted_diff = diff * interface_scores_array[:, np.newaxis]
+    
     # Maxpool across residues (axis 0 is the residue dimension)
-    pooled = np.max(diff, axis=0)
+    pooled = np.max(weighted_diff, axis=0)
     if np.isnan(pooled).any():
         print("NaN found after maxpooling")
         return None
@@ -162,8 +207,76 @@ class EarlyStopping:
         
         return False
 
-def preprocess_and_save_data(csv_path, wt_dir, mut_dir, preprocessed_dir):
-    """Preprocess data once and save it permanently."""
+def process_single_entry(args):
+    """Process a single entry for parallel preprocessing."""
+    row, wt_dir, mut_dir, pdb_dir = args
+    pdb_id = row['#Pdb']
+    complex_id = row['#Pdb_origin']
+    ddg = row['ddG']
+    mutation = row['Mutation(s)_cleaned']
+    
+    # Skip if ddG is NaN
+    if pd.isna(ddg):
+        return None
+    
+    # Construct paths
+    wt_path = Path(wt_dir) / f"{pdb_id}_full_embeddings.npy"
+    mut_path = Path(mut_dir) / f"{pdb_id}_full_embeddings.npy"
+    pdb_path = Path(pdb_dir) / f"{pdb_id}.pdb"
+    
+    if not (wt_path.exists() and mut_path.exists() and pdb_path.exists()):
+        return None
+    
+    try:
+        # Load and process embeddings for both directions
+        wt_emb, mut_emb = load_embeddings(wt_path, mut_path)
+        
+        # Get sequence from mutation info (first residue of first mutation)
+        first_mut = mutation.split(',')[0].strip()
+        chain_id = first_mut[1]  # Get chain ID from mutation (e.g., 'A' from 'RA88A')
+        
+        # Get interface scores for the actual mutation
+        try:
+            # Use interface_scores for the actual mutation
+            scores = interface_scores(str(pdb_path), [first_mut])
+            if not scores:
+                print(f"Warning: No interface scores returned for {pdb_id} mutation {first_mut}")
+                return None
+            interface_score_value = scores[0]  # Get the score for this mutation
+            
+            # Create a mask of 1s and 0s based on whether each residue is the mutation site
+            residue_pos = int(first_mut[2:-1])  # Get position (e.g., 88 from 'RA88A')
+            interface_scores_array = np.zeros(len(wt_emb))
+            interface_scores_array[residue_pos - 1] = interface_score_value  # -1 because positions are 1-indexed
+            
+        except Exception as e:
+            print(f"Error calculating interface scores for {pdb_id} mutation {first_mut}: {str(e)}")
+            return None
+        
+        # Process WT→MT direction
+        diff_wt_mt = process_embeddings(wt_emb, mut_emb, interface_scores_array)
+        if diff_wt_mt is None:
+            print(f"Skipping {pdb_id} - NaN in WT→MT embeddings")
+            return None
+            
+        # Process MT→WT direction
+        diff_mt_wt = process_embeddings(mut_emb, wt_emb, interface_scores_array)
+        if diff_mt_wt is None:
+            print(f"Skipping {pdb_id} - NaN in MT→WT embeddings")
+            return None
+            
+        return {
+            'X_wt_mt': diff_wt_mt,
+            'X_mt_wt': diff_mt_wt,
+            'y': ddg,
+            'complex_id': complex_id
+        }
+    except Exception as e:
+        print(f"Error processing {pdb_id}: {str(e)}")
+        return None
+
+def preprocess_and_save_data(csv_path, wt_dir, mut_dir, preprocessed_dir, pdb_dir, num_workers=16):
+    """Preprocess data once and save it permanently using parallel processing."""
     preprocessed_path = Path(preprocessed_dir)
     preprocessed_path.mkdir(exist_ok=True)
     
@@ -199,69 +312,35 @@ def preprocess_and_save_data(csv_path, wt_dir, mut_dir, preprocessed_dir):
         print("Rows with NaN ddG:")
         print(df[df['ddG'].isna()])
     
-    # Prepare data
-    X_wt_mt = []  # WT→MT embeddings
-    X_mt_wt = []  # MT→WT embeddings
-    y = []
-    complex_ids = []
+    # Prepare arguments for parallel processing
+    process_args = [(row, wt_dir, mut_dir, pdb_dir) for _, row in df.iterrows()]
+    
+    # Process entries in parallel
+    results = []
     skipped_count = 0
     nan_count = 0
     
-    for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing embeddings"):
-        pdb_id = row['#Pdb']
-        complex_id = row['#Pdb_origin']
-        ddg = row['ddG']
-        
-        # Skip if ddG is NaN
-        if pd.isna(ddg):
-            print(f"Skipping {pdb_id} - NaN ddG value")
-            skipped_count += 1
-            continue
-        
-        # Construct paths
-        wt_path = Path(wt_dir) / f"{pdb_id}_full_embeddings.npy"
-        mut_path = Path(mut_dir) / f"{pdb_id}_full_embeddings.npy"
-        
-        if not (wt_path.exists() and mut_path.exists()):
-            skipped_count += 1
-            continue
-        
-        try:
-            # Load and process embeddings for both directions
-            wt_emb, mut_emb = load_embeddings(wt_path, mut_path)
-            
-            # Process WT→MT direction
-            diff_wt_mt = process_embeddings(wt_emb, mut_emb)
-            if diff_wt_mt is None:
-                print(f"Skipping {pdb_id} - NaN in WT→MT embeddings")
-                nan_count += 1
+    print(f"\nProcessing {len(process_args)} entries using {num_workers} workers...")
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        for result in tqdm(executor.map(process_single_entry, process_args), total=len(process_args)):
+            if result is None:
+                skipped_count += 1
                 continue
-                
-            # Process MT→WT direction
-            diff_mt_wt = process_embeddings(mut_emb, wt_emb)
-            if diff_mt_wt is None:
-                print(f"Skipping {pdb_id} - NaN in MT→WT embeddings")
-                nan_count += 1
-                continue
-                
-            X_wt_mt.append(diff_wt_mt)
-            X_mt_wt.append(diff_mt_wt)
-            y.append(ddg)
-            complex_ids.append(complex_id)
-        except Exception as e:
-            print(f"Error processing {pdb_id}: {str(e)}")
-            skipped_count += 1
-            continue
+            results.append(result)
     
-    X_wt_mt = np.array(X_wt_mt)
-    X_mt_wt = np.array(X_mt_wt)
-    y = np.array(y)
-    complex_ids = np.array(complex_ids)
+    if not results:
+        print("No valid entries found after processing!")
+        return
+    
+    # Unpack results
+    X_wt_mt = np.array([r['X_wt_mt'] for r in results])
+    X_mt_wt = np.array([r['X_mt_wt'] for r in results])
+    y = np.array([r['y'] for r in results])
+    complex_ids = np.array([r['complex_id'] for r in results])
     
     print(f"\nDataset statistics:")
     print(f"Total entries in CSV: {len(df)}")
-    print(f"Skipped entries (missing files): {skipped_count}")
-    print(f"Skipped entries (NaN in embeddings): {nan_count}")
+    print(f"Skipped entries: {skipped_count}")
     print(f"Final dataset size: {len(X_wt_mt)}")
     
     # Save preprocessed data
@@ -275,7 +354,6 @@ def preprocess_and_save_data(csv_path, wt_dir, mut_dir, preprocessed_dir):
     info = {
         'total_entries': len(df),
         'skipped_entries': skipped_count,
-        'nan_entries': nan_count,
         'final_size': len(X_wt_mt),
         'input_dim': X_wt_mt.shape[1],
         'timestamp': datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -649,7 +727,8 @@ def main():
     
     # Preprocess data if needed
     if args.preprocess_only:
-        preprocess_and_save_data(args.csv_path, args.wt_dir, args.mut_dir, args.preprocessed_dir)
+        preprocess_and_save_data(args.csv_path, args.wt_dir, args.mut_dir, 
+                               args.preprocessed_dir, args.pdb_dir, args.num_workers)
         return
     
     # Load preprocessed data
