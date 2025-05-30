@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=hypperparam
-#SBATCH --output=hyperparam_%j.out
-#SBATCH --error=hyperparam_%j.err
+#SBATCH --job-name=hyperparam_scores
+#SBATCH --output=hyperparam_scores_%j.out
+#SBATCH --error=hyperparam_scores_%j.err
 #SBATCH --time=12:00:00
 #SBATCH --mem=8G
 #SBATCH --partition=gpu_test
@@ -18,4 +18,4 @@ conda activate gnn_ppi
 cd /n/netscratch/shakhnovich_lab/Lab/amaechler/ProSST_PPI
 
 # Run your script
-python hyperparam_search.py
+python hyperparam_search_scores.py

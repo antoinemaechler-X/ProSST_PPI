@@ -196,10 +196,10 @@ def main():
     parser.add_argument('protein_id', type=str, 
                         help='Protein ID to analyze (e.g., 1CSE)')
     parser.add_argument('--wildtype_dir', type=str, 
-                        default='data/SKEMPI2/SKEMPI2_cache/embedding_wildtype_full_2048',
+                        default='data/SKEMPI2/SKEMPI2_cache/embedding_wildtype_pyrosetta_full_2048',
                         help='Directory containing wildtype embeddings')
     parser.add_argument('--optimized_dir', type=str, 
-                        default='data/SKEMPI2/SKEMPI2_cache/embedding_optimized_full_2048',
+                        default='data/SKEMPI2/SKEMPI2_cache/embedding_optimized_pyrosetta_full_2048',
                         help='Directory containing optimized embeddings')
     parser.add_argument('--save_plots', action='store_true',
                         help='Save visualization plots to disk')

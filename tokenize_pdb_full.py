@@ -151,8 +151,8 @@ def process_pdb_file(pdb_file: str, output_dir: str, processor: PdbQuantizer):
 
 def main():
     # Input and output directories
-    input_dir = "data/SKEMPI2/SKEMPI2_cache/optimized"
-    output_dir = "data/SKEMPI2/SKEMPI2_cache/token_optimized_full_2048"
+    input_dir = "data/SKEMPI2/SKEMPI2_cache/wildtype_pyrosetta_refined"
+    output_dir = "data/SKEMPI2/SKEMPI2_cache/token_wildtype_pyrosetta_refined_full_2048"
     
     # Create output directory if it doesn't exist
     Path(output_dir).mkdir(parents=True, exist_ok=True)

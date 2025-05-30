@@ -79,14 +79,14 @@ def main():
         print("\nSuccessfully loaded arrays:", list(data.keys()))
         
         # Print first 10 elements of each array
-        print("\nFirst 10 elements of each array:")
+        print("\nFirst 5 elements of each array:")
         print("-" * 50)
         for name, array in data.items():
             print(f"\nArray: {name}")
             if array.ndim == 1:  # 1D array
-                print(array[:20])
+                print(array[:5])
             elif array.ndim == 2:  # 2D array
-                print(array[:20, :20])  # First 10x10 elements
+                print(array[:5, :5])  # First 10x10 elements
             else:  # Higher dimensional array
                 print(f"Shape: {array.shape}")
                 print("First element:", array.flat[0])

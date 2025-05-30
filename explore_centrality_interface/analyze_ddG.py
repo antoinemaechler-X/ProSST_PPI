@@ -4,14 +4,17 @@ import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import numpy as np
+from scipy import stats
 
 from burial_score import burial_score, burial_scores
 from interface_score import interface_score, interface_scores
-from shift_score import combined_shift_score, combined_shift_scores
+from dihedral_score import compute_dihedral_score, compute_dihedral_scores
+from flexibility_score import flexibility_score, flexibility_scores
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Analyze ddG vs normalized burial, interface & shift scores"
+        description="Analyze ddG vs normalized burial, interface, dihedral & flexibility scores"
     )
     parser.add_argument("-p", "--protein", type=str, required=True,
                         help="PDB code to filter (e.g. 1A22)")
@@ -26,10 +29,10 @@ def main():
     parser.add_argument("-s", "--sigma-interface", type=float,
                         dest="sigma_interface", default=1.0,
                         help="σ for interface Gaussian (default: 1.0)")
-    parser.add_argument("--w_dihedral_shift", type=float, default=1.0,
-                        help="Weight for dihedral component in shift score")
-    parser.add_argument("--w_contact_shift", type=float, default=1.0,
-                        help="Weight for contact component in shift score")
+    parser.add_argument("--w_dihedral", type=float, default=1.0,
+                        help="Weight for dihedral score")
+    parser.add_argument("--min_flex_change", type=float, default=1e-5,
+                        help="Minimum flexibility change to consider (default: 1e-5)")
     parser.add_argument("--single", action="store_true", default=False,
                         help="Only consider single-point mutations")
     parser.add_argument("--names", action="store_true", default=False,
@@ -39,7 +42,7 @@ def main():
     args = parser.parse_args()
 
     here = os.path.dirname(os.path.abspath(__file__))
-    plots_dir = os.path.join(here, 'plots_centrality_interface_shift')
+    plots_dir = os.path.join(here, 'plots_centrality_interface_dihedral_flex')
     os.makedirs(plots_dir, exist_ok=True)
 
     csv_path = os.path.join(here, '..', 'data', 'SKEMPI2', 'SKEMPI2.csv')
@@ -47,6 +50,10 @@ def main():
                               'SKEMPI2_cache', 'wildtype')
     pdb_opt_dir = os.path.join(here, '..', 'data', 'SKEMPI2',
                                'SKEMPI2_cache', 'optimized')
+    flex_wt_file = os.path.join(here, '..', 'data', 'SKEMPI2',
+                                'SKEMPI2_cache', 'skempi_output_wildtype-3D-all-predictions.txt')
+    flex_mt_file = os.path.join(here, '..', 'data', 'SKEMPI2',
+                                'SKEMPI2_cache', 'skempi_output-3D-all-predictions.txt')
 
     df = pd.read_csv(csv_path)
     df = df[df['#Pdb_origin'] == args.protein]
@@ -67,7 +74,9 @@ def main():
     ddG_list        = []
     burial_list     = []
     interface_list  = []
-    shift_list      = []
+    dihedral_list   = []
+    flex_list       = []
+    flex_ddG_list   = []  # List for signed ddG values (only for flexibility)
     labels          = []
     lengths         = []
 
@@ -82,9 +91,11 @@ def main():
         n_muts = len(muts)
 
         try:
-            ddg_val = abs(float(row['ddG']))
+            ddg_val = abs(float(row['ddG']))  # Keep absolute for burial/interface/dihedral
+            ddg_signed = float(row['ddG'])    # Keep signed for flexibility
         except:
             ddg_val = float('nan')
+            ddg_signed = float('nan')
 
         if args.mode == 'individual':
             # nested tqdm for mutations
@@ -103,19 +114,26 @@ def main():
                     print(f"[Warn] interface row {idx}, mut {mut}: {e}")
                     i = float('nan')
                 try:
-                    s = combined_shift_score(
-                        wt_pdb, opt_pdb, mut,
-                        w_dihedral=args.w_dihedral_shift,
-                        w_contact=args.w_contact_shift
+                    d = compute_dihedral_score(wt_pdb, opt_pdb, mut)
+                except Exception as e:
+                    print(f"[Warn] dihedral row {idx}, mut {mut}: {e}")
+                    d = float('nan')
+                try:
+                    f = flexibility_score(
+                        flex_wt_file, flex_mt_file,
+                        f"{row['#Pdb']}_{mut}",
+                        min_change_threshold=args.min_flex_change
                     )
                 except Exception as e:
-                    print(f"[Warn] shift row {idx}, mut {mut}: {e}")
-                    s = float('nan')
+                    print(f"[Warn] flexibility row {idx}, mut {mut}: {e}")
+                    f = float('nan')
 
                 burial_list.append(b)
                 interface_list.append(i)
-                shift_list.append(s)
-                ddG_list.append(ddg_val)
+                dihedral_list.append(d)
+                flex_list.append(f)
+                ddG_list.append(ddg_val)  # Use absolute for burial/interface/dihedral
+                flex_ddG_list.append(ddg_signed)  # Use signed only for flexibility
                 labels.append(mut)
                 lengths.append(n_muts)
 
@@ -123,31 +141,38 @@ def main():
             try:
                 b_scores = burial_scores(wt_pdb, muts, neighbor_count=args.neighbors)
                 i_scores = interface_scores(wt_pdb, muts, sigma_interface=args.sigma_interface)
-                s_scores = combined_shift_scores(
-                    wt_pdb, opt_pdb, muts,
-                    w_dihedral=args.w_dihedral_shift,
-                    w_contact=args.w_contact_shift
+                d_scores = compute_dihedral_scores(wt_pdb, opt_pdb, muts)
+                f_scores = flexibility_scores(
+                    flex_wt_file, flex_mt_file,
+                    [f"{row['#Pdb']}_{mut}" for mut in muts],
+                    min_change_threshold=args.min_flex_change
                 )
+                
                 if args.mode == 'mean':
                     b = sum(b_scores) / len(b_scores)
                     i = sum(i_scores) / len(i_scores)
-                    s = sum(s_scores) / len(s_scores)
+                    d = sum(d_scores) / len(d_scores)
+                    f = sum(f_scores) / len(f_scores)
                 elif args.mode == 'sum':
                     b = sum(b_scores)
                     i = sum(i_scores)
-                    s = sum(s_scores)
+                    d = sum(d_scores)
+                    f = sum(f_scores)
                 else:  # max
                     b = max(b_scores)
                     i = max(i_scores)
-                    s = max(s_scores)
+                    d = max(d_scores)
+                    f = max(f_scores)
             except Exception as e:
                 print(f"[Warn] row {idx} aggregate: {e}")
-                b, i, s = float('nan'), float('nan'), float('nan')
+                b, i, d, f = float('nan'), float('nan'), float('nan'), float('nan')
 
             burial_list.append(b)
             interface_list.append(i)
-            shift_list.append(s)
-            ddG_list.append(ddg_val)
+            dihedral_list.append(d)
+            flex_list.append(f)
+            ddG_list.append(ddg_val)  # Use absolute for burial/interface/dihedral
+            flex_ddG_list.append(ddg_signed)  # Use signed only for flexibility
             labels.append(";".join(muts))
             lengths.append(n_muts)
 
@@ -169,6 +194,24 @@ def main():
             for xi, yi, lab in zip(x, y, labels):
                 plt.text(xi, yi, lab, fontsize=6, alpha=0.7)
 
+        # Calculate correlation statistics
+        # Remove any NaN values for correlation calculation
+        mask = ~(np.isnan(x) | np.isnan(y))
+        x_clean = np.array(x)[mask]
+        y_clean = np.array(y)[mask]
+        
+        if len(x_clean) > 1:  # Only calculate if we have enough valid points
+            pearson_r, pearson_p = stats.pearsonr(x_clean, y_clean)
+            spearman_r, spearman_p = stats.spearmanr(x_clean, y_clean)
+            
+            # Create text box with correlation statistics
+            stats_text = f'Pearson: r={pearson_r:.3f} (p={pearson_p:.2e})\nSpearman: ρ={spearman_r:.3f} (p={spearman_p:.2e})'
+            plt.text(0.05, 0.95, stats_text,
+                    transform=plt.gca().transAxes,
+                    bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'),
+                    verticalalignment='top',
+                    fontsize=8)
+
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.title(title)
@@ -179,6 +222,7 @@ def main():
 
     mode_label = args.mode.capitalize()
 
+    # All plots except flexibility use absolute ddG values
     make_scatter(
         burial_list, ddG_list, labels, lengths,
         'Normalized Burial', 'Absolute ddG',
@@ -192,14 +236,18 @@ def main():
         f'ddG_vs_interface_{args.protein}_{args.mode}_s{args.sigma_interface}.png'
     )
     make_scatter(
-        shift_list, ddG_list, labels, lengths,
-        'Shift Score', 'Absolute ddG',
-        (f'ddG vs Shift Score '
-         f'({mode_label}, w_dihedral={args.w_dihedral_shift}, '
-         f'w_contact={args.w_contact_shift})'),
-        (f'ddG_vs_shift_{args.protein}_{args.mode}_'
-         f'wD{args.w_dihedral_shift}_wC{args.w_contact_shift}.png')
+        dihedral_list, ddG_list, labels, lengths,
+        'Dihedral Score', 'Absolute ddG',
+        f'ddG vs Dihedral Score ({mode_label})',
+        f'ddG_vs_dihedral_{args.protein}_{args.mode}.png'
+    )
+    # Only flexibility plot uses signed ddG values
+    make_scatter(
+        flex_list, flex_ddG_list, labels, lengths,
+        'Flexibility Score', 'Signed ddG',
+        f'ddG vs Flexibility ({mode_label}, min_change={args.min_flex_change})',
+        f'ddG_vs_flex_{args.protein}_{args.mode}_min{args.min_flex_change}.png'
     )
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

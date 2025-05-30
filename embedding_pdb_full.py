@@ -175,9 +175,9 @@ def main():
     model_path = "AI4Protein/ProSST-2048"
     
     # Input and output directories
-    token_dir = "data/SKEMPI2/SKEMPI2_cache/token_wildtype_full_2048"
-    pdb_dir = "data/SKEMPI2/SKEMPI2_cache/wildtype"
-    output_dir = "data/SKEMPI2/SKEMPI2_cache/embedding_wildtype_full_2048"
+    token_dir = "data/SKEMPI2/SKEMPI2_cache/token_wildtype_pyrosetta_refined_full_2048"
+    pdb_dir = "data/SKEMPI2/SKEMPI2_cache/wildtype_pyrosetta_refined"
+    output_dir = "data/SKEMPI2/SKEMPI2_cache/embedding_wildtype_pyrosetta_refined_full_2048"
     
     # Allow overriding directories via environment variables
     token_dir = os.environ.get('TOKEN_DIR', token_dir)

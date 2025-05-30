@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=embed_skemp
-#SBATCH --output=embed_%j.out
-#SBATCH --error=embed_%j.err
+#SBATCH --job-name=attention
+#SBATCH --output=attention_%j.out
+#SBATCH --error=attention_%j.err
 #SBATCH --time=12:00:00
 #SBATCH --mem=8G
 #SBATCH --partition=gpu_test
@@ -12,10 +12,9 @@
 
 # Load your environment
 source /n/sw/Mambaforge-23.11.0-0/etc/profile.d/conda.sh
-conda activate gnn_ppi
+conda activate gnn_ppi  # Make sure to use your correct environment name
 
 # Go to your project directory
 cd /n/netscratch/shakhnovich_lab/Lab/amaechler/ProSST_PPI
 
-# Run your script
-python embedding_pdb_full.py 
+python MLP_attention_scores_new.py
